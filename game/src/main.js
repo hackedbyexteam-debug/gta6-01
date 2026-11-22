@@ -2,7 +2,7 @@
 // every system together: driving, combat, police, missions, shops, the taxi
 // side job, day and night, and the save. ?seed=N fixes the world; ?shot=
 // stages one deterministic screenshot scene instead of the loop.
-import { WORLD_W, WORLD_H, START_MINUTES, DAY_LENGTH } from './config.js';
+import { START_MINUTES, DAY_LENGTH } from './config.js';
 import { createRandom } from './random.js';
 import { createWorld } from './world.js';
 import { createInput, ACTION } from './input.js';
@@ -13,6 +13,7 @@ import { createArsenal, weaponDef, shoot, reloadWeapon, updatePickups, buyWeapon
 import { updatePolice, damagePlayer, clearWantedAtGarage } from './police.js';
 import { MISSIONS as MISSION_DEFS, startMission, updateMission, currentStep, locationPoint, objectivePoint } from './missions.js';
 import { enterInterior, exitInterior, interiorDoorAt, updateInteriorPlayer } from './interior.js';
+import { createCamera, updateCamera, snapCamera, worldToScreen, screenToWorld, relativeMove, zoomFor, PLAYER_SCREEN_Y } from './camera.js';
 import { drawWorld, drawPickups, drawVehicles, drawPeople, drawEffects, drawLighting, drawObjectiveMarker, drawInterior, lightFactor } from './render.js';
 import { drawHUD, drawTitle, drawBriefing, drawPhone, drawPaused, drawDead, drawBusted, drawComplete } from './hud.js';
 import { saveGame, loadGame, clearSave, applySave } from './save.js';
@@ -49,7 +50,10 @@ const game = {
   time: START_MINUTES,
   weather: 'clear',
   weatherTimer: 45,
-  camera: { x: 0, y: 0 },
+  camera: createCamera(0, 0),
+  // The world point under the mouse cursor, set only when the mouse moves
+  // (see the aim note in updatePlaying). The aim line points at it.
+  aimWorld: null,
   state: 'title',
   stats: { kills: 0, shotsFired: 0, carsStolen: 0, missionsDone: 0, moneyEarned: 0 },
   completedMissions: [],
@@ -258,21 +262,30 @@ function updatePlaying(dt) {
       game.audio.setEngine(Math.abs(car.speed) / car.def.topSpeed);
     }
   } else {
+    // On foot: WASD moves relative to the facing, so W always walks
+    // up-screen under the rotating camera (see relativeMove).
+    const mv = relativeMove(p.angle,
+      input.held(ACTION.UP), input.held(ACTION.DOWN),
+      input.held(ACTION.LEFT), input.held(ACTION.RIGHT));
     updatePlayerOnFoot(p, {
-      up: input.held(ACTION.UP),
-      down: input.held(ACTION.DOWN),
-      left: input.held(ACTION.LEFT),
-      right: input.held(ACTION.RIGHT),
-      sprint: input.held(ACTION.SPRINT),
+      mx: mv.mx, my: mv.my, sprint: input.held(ACTION.SPRINT),
     }, dt, game.world, game.vehicles);
     game.audio.setEngine(0);
-    // Aim and shoot with the mouse.
-    const mx = input.mouse.x;
-    const my = input.mouse.y;
-    const aim = Math.atan2(my - (p.y - game.camera.y), mx - (p.x - game.camera.x));
+    // Facing: the mouse aims the character. The aim is recomputed ONLY
+    // when the mouse moves this frame — recomputing it every frame against
+    // a rotating camera would chase its own tail and the camera would
+    // never settle. Keyboard-only play (mouse never moved) faces the
+    // direction you walk instead.
+    if (input.mouse.moved) {
+      const w = screenToWorld(game.camera, input.mouse.x, input.mouse.y);
+      game.aimWorld = w;
+      p.angle = Math.atan2(w.y - p.y, w.x - p.x);
+    } else if (!input.mouse.seen && p.walking) {
+      p.angle = Math.atan2(mv.my, mv.mx);
+    }
+    // Shoot along the facing (which is the aim direction).
     if (input.mouse.down || input.mouse.clicked) {
-      p.angle = aim;
-      shoot(game, p.x, p.y, aim);
+      shoot(game, p.x, p.y, p.angle);
     }
     if (input.pressed(ACTION.RELOAD)) reloadWeapon(game);
     // Weapon select 1-5.
@@ -365,11 +378,12 @@ function updatePlaying(dt) {
   const copNear = game.cops.some((c) => !c.dead && Math.hypot(c.x - p.x, c.y - p.y) < 700);
   game.audio.setSiren(game.wanted >= 2 && copNear);
 
-  // Camera follows the player.
-  const tx = Math.max(0, Math.min(WORLD_W - VIEW_W, p.x - VIEW_W / 2));
-  const ty = Math.max(0, Math.min(WORLD_H - VIEW_H, p.y - VIEW_H / 2));
-  game.camera.x += (tx - game.camera.x) * Math.min(1, dt * 5);
-  game.camera.y += (ty - game.camera.y) * Math.min(1, dt * 5);
+  // GTA-style follow camera: zoomed in, rotating so the facing is always
+  // up-screen, the player below centre so the road ahead reads wider.
+  // On foot the camera turns with you; in a car it turns with the car
+  // and pulls back as speed rises.
+  const targetAngle = p.inCar ? p.inCar.angle : p.angle;
+  updateCamera(game.camera, p.x, p.y, targetAngle, zoomFor(p), dt);
 
   // Death and story end.
   if (p.dead) {
@@ -437,20 +451,30 @@ function render() {
     else if (game.state === 'phone') drawPhone(ctx, game);
     return;
   }
-  drawWorld(ctx, game, game.camera);
-  drawPickups(ctx, game, game.camera);
-  drawVehicles(ctx, game, game.camera);
-  drawPeople(ctx, game, game.camera);
-  drawEffects(ctx, game, game.camera);
-  drawObjectiveMarker(ctx, game, game.camera);
+  // The world is drawn in WORLD coords under the camera transform:
+  // translate to the player's screen spot, scale by the zoom, rotate so
+  // the facing is up-screen, then shift by the camera focus. HUD, lighting
+  // and the objective marker are screen space and drawn after the restore.
+  const cam = game.camera;
+  ctx.save();
+  ctx.translate(VIEW_W / 2, VIEW_H * PLAYER_SCREEN_Y);
+  ctx.scale(cam.zoom, cam.zoom);
+  ctx.rotate(-(cam.angle + Math.PI / 2));
+  ctx.translate(-cam.x, -cam.y);
+  drawWorld(ctx, game, cam);
+  drawPickups(ctx, game, cam);
+  drawVehicles(ctx, game, cam);
+  drawPeople(ctx, game, cam);
+  drawEffects(ctx, game, cam);
+  ctx.restore();
+  drawObjectiveMarker(ctx, game, cam);
   drawLighting(ctx, game);
   if (game.fare) {
-    const fx = game.fare.at.x - game.camera.x;
-    const fy = game.fare.at.y - game.camera.y;
+    const fs = worldToScreen(cam, game.fare.at.x, game.fare.at.y);
     ctx.fillStyle = '#3ecf6e';
     ctx.font = 'bold 13px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(game.fare.stage === 'pickup' ? 'FARE' : 'DROP OFF', fx, fy - 18);
+    ctx.fillText(game.fare.stage === 'pickup' ? 'FARE' : 'DROP OFF', fs.x, fs.y - 18);
     ctx.textAlign = 'left';
   }
   drawHUD(ctx, game);
@@ -606,8 +630,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 bootWorld();
-game.camera.x = Math.max(0, Math.min(WORLD_W - VIEW_W, game.player.x - VIEW_W / 2));
-game.camera.y = Math.max(0, Math.min(WORLD_H - VIEW_H, game.player.y - VIEW_H / 2));
+snapCamera(game.camera, game.player.x, game.player.y, game.player.angle, zoomFor(game.player));
 
 const imageLoads = Promise.all([
   loadImage('title', 'assets/title.jpg'),
