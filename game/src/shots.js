@@ -2,7 +2,7 @@
 // Each one plays the real rules forward from a fixed seed and stages a frame
 // that shows the game at its best — the judge sees the game through these
 // four images (interior is a fifth, for the owner to see the rooms).
-import { WORLD_W, WORLD_H } from './config.js';
+import { snapCamera, zoomFor } from './camera.js';
 import { MISSIONS, startMission } from './missions.js';
 import { createVehicle } from './vehicles.js';
 import { createCop } from './police.js';
@@ -18,11 +18,12 @@ export function stageShot(name, game) {
   game.player.dead = false;
   game.player.health = 100;
   if (name === 'drive') {
-    // Golden-hour downtown drive: sports car, traffic, clean record.
+    // Golden-hour downtown drive: sports car on the east-west road,
+    // facing east — the camera turns so the road ahead is up-screen.
     game.time = 17 * 60 + 40;
     game.weather = 'clear';
     game.wanted = 0;
-    const car = createVehicle('sports', world.shops.garage.x + 60, world.shops.garage.y + 40, 0);
+    const car = createVehicle('sports', 700, 544, 0);
     game.vehicles.push(car);
     game.player.inCar = car;
     game.player.x = car.x;
@@ -30,7 +31,9 @@ export function stageShot(name, game) {
     placeTraffic(game, 8);
     game.banner = { text: 'SOLMAR HEAT — Downtown, golden hour', life: 5 };
   } else if (name === 'chase') {
-    // Rainy night, three stars, PD cruisers closing in.
+    // Rainy night, three stars, PD cruisers closing in. The car faces
+    // south, so the camera turns 180°: the pincer reads on screen — one
+    // cruiser behind (bottom of the frame), two ahead on the cross road.
     game.time = 21 * 60 + 30;
     game.weather = 'rain';
     game.wanted = 3;
@@ -40,8 +43,13 @@ export function stageShot(name, game) {
     game.player.inCar = car;
     game.player.x = car.x;
     game.player.y = car.y;
-    for (let i = 0; i < 3; i++) {
-      const cruiser = createVehicle('police', car.x - 180 - i * 90, car.y + (i - 1) * 120, Math.PI / 2);
+    const cruiserSpots = [
+      [544, 360], // behind, on the north-south road
+      [700, 544], // ahead-left, on the east-west road
+      [400, 544], // ahead-right, on the east-west road
+    ];
+    for (const [cx, cy] of cruiserSpots) {
+      const cruiser = createVehicle('police', cx, cy, Math.PI / 2);
       game.vehicles.push(cruiser);
       game.cops.push(createCop(cruiser.x, cruiser.y, cruiser));
     }
@@ -60,10 +68,16 @@ export function stageShot(name, game) {
     startMission(game, 7);
     game.mission.stepIndex = 1;
     game.mission.timer = 6;
-    // Cops on the road south of the bank (bank.x is the road centre),
-    // never on the building roof.
-    for (let i = 0; i < 3; i++) {
-      game.cops.push(createCop(world.bank.x - 20 + (i % 2) * 40, world.bank.y + 130 + i * 70, null));
+    // Cops on the road south of the bank, close enough to read inside
+    // the zoomed frame (the player faces north, so south is the narrow
+    // strip of screen below the player).
+    const copSpots = [
+      [world.bank.x, world.bank.y + 120],
+      [world.bank.x + 32, world.bank.y + 145],
+      [world.bank.x + 8, world.bank.y + 170],
+    ];
+    for (const [cx, cy] of copSpots) {
+      game.cops.push(createCop(cx, cy, null));
     }
     placeTraffic(game, 6);
     game.banner = { text: 'THE BANK JOB — crack the vault', life: 5 };
@@ -80,9 +94,11 @@ export function stageShot(name, game) {
     game.player.angle = -Math.PI / 2;
     game.banner = { text: 'Rico\u2019s Hideout — every building has its own rooms', life: 5 };
   }
-  // Center the camera on the player for a composed frame.
-  game.camera.x = Math.max(0, Math.min(WORLD_W - 1280, game.player.x - 640));
-  game.camera.y = Math.max(0, Math.min(WORLD_H - 720, game.player.y - 360));
+  // Snap the follow camera onto the player for a composed frame: focus
+  // on the player, angle on the facing (the car when driving), zoom for
+  // the speed. The interior shot ignores the camera (fixed room view).
+  const targetAngle = game.player.inCar ? game.player.inCar.angle : game.player.angle;
+  snapCamera(game.camera, game.player.x, game.player.y, targetAngle, zoomFor(game.player));
 }
 
 function placeTraffic(game, count) {

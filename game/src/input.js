@@ -22,7 +22,12 @@ const KEYMAP = {
 export function createInput(canvas) {
   const held = new Set();
   const pressed = new Set();
-  const mouse = { x: 0, y: 0, down: false, clicked: false };
+  // mouse.seen: the pointer has moved at least once (keyboard-only play
+  // never sets it, so facing falls back to the movement direction).
+  // mouse.moved: the pointer moved this frame — the only moment the aim
+  // angle is recomputed (recomputing it every frame against a rotating
+  // camera would chase its own tail: the camera would never settle).
+  const mouse = { x: 0, y: 0, down: false, clicked: false, seen: false, moved: false };
   let anyKey = false;
 
   function onKeyDown(e) {
@@ -40,13 +45,18 @@ export function createInput(canvas) {
   }
   function onMouseMove(e) {
     const rect = canvas.getBoundingClientRect();
-    mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width);
-    mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const nx = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const ny = (e.clientY - rect.top) * (canvas.height / rect.height);
+    if (nx !== mouse.x || ny !== mouse.y) mouse.moved = true;
+    mouse.x = nx;
+    mouse.y = ny;
+    mouse.seen = true;
   }
   function onMouseDown(e) {
     onMouseMove(e);
     mouse.down = true;
     mouse.clicked = true;
+    mouse.seen = true;
     anyKey = true;
   }
   function onMouseUp() {
@@ -76,6 +86,7 @@ export function createInput(canvas) {
     endFrame() {
       pressed.clear();
       mouse.clicked = false;
+      mouse.moved = false;
     },
   };
 }

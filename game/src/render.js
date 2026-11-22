@@ -5,6 +5,7 @@
 // held weapon, cars as real shapes per type, and furnished interiors.
 // 2.5D Canvas only — no WebGL, so every frame can be verified headlessly.
 import { TILE, T, MAP_W, MAP_H, WORLD_W, WORLD_H } from './config.js';
+import { viewBounds, worldToScreen } from './camera.js';
 import { carShape } from './vehicles.js';
 import { weaponShape } from './combat.js';
 
@@ -64,19 +65,22 @@ export function lightFactor(game) {
 }
 
 export function drawWorld(ctx, game, cam) {
+  // Everything here is drawn in WORLD coords: render() wraps the call in
+  // the camera transform (translate -> scale -> rotate -> translate), so
+  // the view zooms and turns with the player. Culling uses the view's
+  // world-space AABB (viewBounds), never screen px.
   const { world } = game;
-  const vw = ctx.canvas.width;
-  const vh = ctx.canvas.height;
-  const x0 = Math.max(0, Math.floor(cam.x / TILE));
-  const y0 = Math.max(0, Math.floor(cam.y / TILE));
-  const x1 = Math.min(MAP_W - 1, Math.ceil((cam.x + vw) / TILE));
-  const y1 = Math.min(MAP_H - 1, Math.ceil((cam.y + vh) / TILE));
+  const bounds = viewBounds(cam);
+  const x0 = Math.max(0, Math.floor(bounds.x0 / TILE));
+  const y0 = Math.max(0, Math.floor(bounds.y0 / TILE));
+  const x1 = Math.min(MAP_W - 1, Math.ceil(bounds.x1 / TILE));
+  const y1 = Math.min(MAP_H - 1, Math.ceil(bounds.y1 / TILE));
 
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const t = world.tileAt(tx, ty);
-      const px = tx * TILE - cam.x;
-      const py = ty * TILE - cam.y;
+      const px = tx * TILE;
+      const py = ty * TILE;
       ctx.fillStyle = TILE_COLORS[t];
       ctx.fillRect(px, py, TILE, TILE);
       if (t === T.ROAD) {
@@ -106,6 +110,40 @@ export function drawWorld(ctx, game, cam) {
           ctx.arc(px + 16, py + 16, 6, 0, Math.PI * 2);
           ctx.stroke();
         }
+        // Close-up detail the zoom exposes: skid marks, oil stains, drains.
+        if (h >= 0.15 && h < 0.20) {
+          ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(px + 8, py + 4);
+          ctx.quadraticCurveTo(px + 14, py + 16, px + 10, py + 28);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(px + 20, py + 4);
+          ctx.quadraticCurveTo(px + 26, py + 16, px + 22, py + 28);
+          ctx.stroke();
+          ctx.lineWidth = 1;
+        } else if (h >= 0.20 && h < 0.24) {
+          ctx.fillStyle = 'rgba(0,0,0,0.25)';
+          ctx.beginPath();
+          ctx.ellipse(px + 16, py + 16, 9, 6, 0.4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(0,0,0,0.18)';
+          ctx.beginPath();
+          ctx.ellipse(px + 20, py + 20, 5, 3, 0.4, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (h >= 0.24 && h < 0.28) {
+          ctx.fillStyle = '#14161a';
+          ctx.fillRect(px + TILE - 10, py + 8, 6, 16);
+          ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+          ctx.lineWidth = 1;
+          for (let i = 0; i < 3; i++) {
+            ctx.beginPath();
+            ctx.moveTo(px + TILE - 9, py + 11 + i * 5);
+            ctx.lineTo(px + TILE - 5, py + 11 + i * 5);
+            ctx.stroke();
+          }
+        }
         // Sidewalk strip where the road meets a block.
         const isV = ROAD_AT.includes(tx) || ROAD_AT.includes(tx - 1);
         const isH = ROAD_AT.includes(ty) || ROAD_AT.includes(ty - 1);
@@ -117,6 +155,23 @@ export function drawWorld(ctx, game, cam) {
         if (isH) {
           if (world.tileAt(tx, ty - 1) === T.BLOCK) ctx.fillRect(px, py, TILE, 7);
           if (world.tileAt(tx, ty + 1) === T.BLOCK) ctx.fillRect(px, py + TILE - 7, TILE, 7);
+        }
+      } else if (t === T.WALK) {
+        // Paving seams + the odd fallen leaf / bit of litter: the sidewalk
+        // reads as slabs up close instead of one flat grey sheet.
+        ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(px + 16, py); ctx.lineTo(px + 16, py + TILE); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(px, py + 16); ctx.lineTo(px + TILE, py + 16); ctx.stroke();
+        const hw = hash2(tx, ty);
+        if (hw < 0.2) {
+          ctx.fillStyle = hw < 0.1 ? '#b98a3a' : '#7d8a4a';
+          ctx.beginPath();
+          ctx.ellipse(px + 8 + (tx % 14), py + 10 + (ty % 12), 3, 2, 0.6, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (hw < 0.28) {
+          ctx.fillStyle = 'rgba(255,255,255,0.25)';
+          ctx.fillRect(px + 6 + (tx % 18), py + 8 + (ty % 14), 3, 2);
         }
       } else if (t === T.PARK) {
         // Grass texture + trees with shadows, bushes.
@@ -143,14 +198,32 @@ export function drawWorld(ctx, game, cam) {
           ctx.beginPath();
           ctx.arc(px + 16, py + 16, 6, 0, Math.PI * 2);
           ctx.fill();
+        } else if (h < 0.38) {
+          // Wildflowers: tiny coloured dots in the grass.
+          const cols = ['#e8b73a', '#c86b8a', '#e8e8e8'];
+          for (let i = 0; i < 3; i++) {
+            ctx.fillStyle = cols[(i + tx + ty) % 3];
+            ctx.fillRect(px + 6 + i * 9 + (ty % 5), py + 8 + (tx % 7) + i * 4, 2, 2);
+          }
         }
       } else if (t === T.BEACH) {
         ctx.fillStyle = 'rgba(255,255,255,0.14)';
         ctx.fillRect(px, py + ((tx * 3 + ty) % 4) * 8, TILE, 2);
-        if (hash2(tx, ty) < 0.1) {
+        const hb = hash2(tx, ty);
+        if (hb < 0.1) {
           ctx.fillStyle = '#fff';
           ctx.beginPath();
           ctx.arc(px + 10 + (tx % 12), py + 12 + (ty % 10), 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (hb < 0.16) {
+          // A shell washed up on the sand.
+          ctx.fillStyle = '#e8a87d';
+          ctx.beginPath();
+          ctx.arc(px + 20, py + 20, 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.5)';
+          ctx.beginPath();
+          ctx.arc(px + 19, py + 19, 1, 0, Math.PI * 2);
           ctx.fill();
         }
         if (ty === 59) {
@@ -165,14 +238,14 @@ export function drawWorld(ctx, game, cam) {
     }
   }
 
-  drawRoadMarkings(ctx, cam, vw, vh);
+  drawRoadMarkings(ctx, cam);
 
   // Buildings: shadow, extruded walls, roof with style, windows and doors.
   const light = lightFactor(game);
   for (const b of world.buildings) {
-    const px = b.x - cam.x;
-    const py = b.y - cam.y;
-    if (px > vw + 80 || py > vh + 80 || px + b.w < -80 || py + b.h < -80) continue;
+    const px = b.x;
+    const py = b.y;
+    if (px > bounds.x1 || py > bounds.y1 || px + b.w < bounds.x0 || py + b.h < bounds.y0) continue;
     const hgt = Math.min(b.floors * 4, 26);
     const ox = hgt * 0.22;
     const oy = hgt * 0.55;
@@ -207,9 +280,9 @@ export function drawWorld(ctx, game, cam) {
   // Enterable doors: a doormat + a soft pulse so players find them.
   const pulse = 0.5 + Math.sin(performance.now() / 400) * 0.2;
   for (const e of world.enterables) {
-    const dx = e.doorX - cam.x;
-    const dy = e.doorY - cam.y;
-    if (dx < -40 || dy < -40 || dx > vw + 40 || dy > vh + 40) continue;
+    const dx = e.doorX;
+    const dy = e.doorY;
+    if (dx < bounds.x0 - 40 || dy < bounds.y0 - 40 || dx > bounds.x1 + 40 || dy > bounds.y1 + 40) continue;
     ctx.fillStyle = '#5c4028';
     ctx.fillRect(dx - 10, dy - 2, 20, 8);
     ctx.strokeStyle = `rgba(255, 217, 74, ${pulse})`;
@@ -219,45 +292,46 @@ export function drawWorld(ctx, game, cam) {
   }
 }
 
-function drawRoadMarkings(ctx, cam, vw, vh) {
+function drawRoadMarkings(ctx, cam) {
   // Centre dashes (continuous in world space) + solid edge lines.
-  const y0 = Math.max(0, cam.y);
-  const y1 = Math.min(WORLD_H, cam.y + vh);
-  const x0 = Math.max(0, cam.x);
-  const x1 = Math.min(WORLD_W, cam.x + vw);
+  const bounds = viewBounds(cam);
+  const y0 = Math.max(0, bounds.y0);
+  const y1 = Math.min(WORLD_H, bounds.y1);
+  const x0 = Math.max(0, bounds.x0);
+  const x1 = Math.min(WORLD_W, bounds.x1);
   for (const L of ROAD_AT) {
-    const cx = (L + 1) * TILE - cam.x; // centre of the 2-wide vertical road
-    if (cx < -10 || cx > vw + 10) continue;
+    const cx = (L + 1) * TILE; // centre of the 2-wide vertical road
+    if (cx < bounds.x0 - 10 || cx > bounds.x1 + 10) continue;
     const arterial = ARTERIAL.has(L);
     ctx.fillStyle = arterial ? 'rgba(232, 183, 58, 0.85)' : 'rgba(240, 240, 230, 0.7)';
     const offs = arterial ? [-3, 1] : [0];
     for (let y = Math.floor(y0 / 30) * 30; y < y1; y += 30) {
-      for (const o of offs) ctx.fillRect(cx - 1.5 + o, y - cam.y, 3, 16);
+      for (const o of offs) ctx.fillRect(cx - 1.5 + o, y, 3, 16);
     }
     ctx.fillStyle = 'rgba(240, 240, 230, 0.45)';
-    ctx.fillRect(L * TILE - cam.x, y0 - cam.y, 2, y1 - y0);
-    ctx.fillRect((L + 2) * TILE - 2 - cam.x, y0 - cam.y, 2, y1 - y0);
+    ctx.fillRect(L * TILE, y0, 2, y1 - y0);
+    ctx.fillRect((L + 2) * TILE - 2, y0, 2, y1 - y0);
   }
   for (const L of ROAD_AT) {
-    const cy = (L + 1) * TILE - cam.y;
-    if (cy < -10 || cy > vh + 10) continue;
+    const cy = (L + 1) * TILE;
+    if (cy < bounds.y0 - 10 || cy > bounds.y1 + 10) continue;
     const arterial = ARTERIAL.has(L);
     ctx.fillStyle = arterial ? 'rgba(232, 183, 58, 0.85)' : 'rgba(240, 240, 230, 0.7)';
     const offs = arterial ? [-3, 1] : [0];
     for (let x = Math.floor(x0 / 30) * 30; x < x1; x += 30) {
-      for (const o of offs) ctx.fillRect(x - cam.x, cy - 1.5 + o, 16, 3);
+      for (const o of offs) ctx.fillRect(x, cy - 1.5 + o, 16, 3);
     }
     ctx.fillStyle = 'rgba(240, 240, 230, 0.45)';
-    ctx.fillRect(x0 - cam.x, L * TILE - cam.y, x1 - x0, 2);
-    ctx.fillRect(x0 - cam.x, (L + 2) * TILE - 2 - cam.y, x1 - x0, 2);
+    ctx.fillRect(x0, L * TILE, x1 - x0, 2);
+    ctx.fillRect(x0, (L + 2) * TILE - 2, x1 - x0, 2);
   }
   // Zebra crossings at every intersection: stripes parallel to traffic.
   ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
   for (const Lx of ROAD_AT) {
     for (const Ly of ROAD_AT) {
-      const ix = Lx * TILE - cam.x;
-      const iy = Ly * TILE - cam.y;
-      if (ix < -80 || iy < -80 || ix > vw + 80 || iy > vh + 80) continue;
+      const ix = Lx * TILE;
+      const iy = Ly * TILE;
+      if (ix < bounds.x0 - 80 || iy < bounds.y0 - 80 || ix > bounds.x1 + 80 || iy > bounds.y1 + 80) continue;
       for (let i = 0; i < 5; i++) {
         const bx = ix + 6 + i * 11;
         ctx.fillRect(bx, iy + 3, 6, 22); // north approach, vertical road
@@ -353,7 +427,8 @@ function drawWallFace(ctx, b, rx, ry, w, hgt, light, game) {
     }
   }
   // A door on the south face. Enterable buildings get a real door + mat.
-  const doorX = b.enterable ? b.doorX - game.camera.x : rx + w / 2;
+  // The door's world x lines up with the doormat drawn in drawWorld.
+  const doorX = b.enterable ? b.doorX : rx + w / 2;
   const doorW = 14;
   ctx.fillStyle = '#4a3220';
   ctx.fillRect(doorX - doorW / 2, ry + hgt - 14, doorW, 14);
@@ -374,9 +449,10 @@ function drawWallFace(ctx, b, rx, ry, w, hgt, light, game) {
 }
 
 function drawLabel(ctx, game, cam, pt, text) {
-  const px = pt.x - cam.x;
-  const py = pt.y - cam.y;
-  if (px < -80 || py < -80 || px > ctx.canvas.width + 80 || py > ctx.canvas.height + 80) return;
+  const bounds = viewBounds(cam);
+  const px = pt.x;
+  const py = pt.y;
+  if (px < bounds.x0 - 80 || py < bounds.y0 - 80 || px > bounds.x1 + 80 || py > bounds.y1 + 80) return;
   ctx.font = 'bold 11px "Segoe UI", sans-serif';
   const w = ctx.measureText(text).width + 12;
   ctx.fillStyle = 'rgba(10, 14, 20, 0.8)';
@@ -388,10 +464,11 @@ function drawLabel(ctx, game, cam, pt, text) {
 }
 
 export function drawPickups(ctx, game, cam) {
+  const bounds = viewBounds(cam);
   for (const pk of game.pickups) {
-    const px = pk.x - cam.x;
-    const py = pk.y - cam.y + Math.sin(pk.bob + performance.now() / 300) * 3;
-    if (px < -20 || py < -20 || px > ctx.canvas.width + 20 || py > ctx.canvas.height + 20) continue;
+    const px = pk.x;
+    const py = pk.y + Math.sin(pk.bob + performance.now() / 300) * 3;
+    if (px < bounds.x0 - 20 || py < bounds.y0 - 20 || px > bounds.x1 + 20 || py > bounds.y1 + 20) continue;
     // A soft glow pad under every pickup.
     ctx.fillStyle = 'rgba(255, 217, 74, 0.18)';
     ctx.beginPath();
@@ -423,11 +500,11 @@ export function drawPickups(ctx, game, cam) {
 export function drawVehicles(ctx, game, cam) {
   for (const v of game.vehicles) {
     if (v.dead) continue;
-    drawCar(ctx, game, v, v.x - cam.x, v.y - cam.y);
+    drawCar(ctx, game, v, v.x, v.y);
     if (v.health < v.def.health * 0.5) {
       ctx.fillStyle = 'rgba(232, 118, 42, 0.7)';
       ctx.beginPath();
-      ctx.arc(v.x - cam.x, v.y - cam.y - 8, 5 + Math.random() * 3, 0, Math.PI * 2);
+      ctx.arc(v.x, v.y - 8, 5 + Math.random() * 3, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -569,30 +646,32 @@ function drawCar(ctx, game, v, x, y) {
 export function drawPeople(ctx, game, cam) {
   for (const ped of game.peds) {
     if (ped.dead) continue;
-    drawPerson(ctx, ped.x - cam.x, ped.y - cam.y, ped.angle, ped, ped.walkPhase, ped.panic > 0, 'fists');
+    drawPerson(ctx, ped.x, ped.y, ped.angle, ped, ped.walkPhase, ped.panic > 0, 'fists');
   }
   for (const cop of game.cops) {
     if (cop.dead) continue;
     if (cop.inCar) continue;
     const copLook = { color: '#2f4a7d', hair: '#1a1a1a', pants: '#1f2f4a', hat: true };
-    drawPerson(ctx, cop.x - cam.x, cop.y - cam.y, cop.angle, copLook, performance.now() / 120, true, 'pistol');
+    drawPerson(ctx, cop.x, cop.y, cop.angle, copLook, performance.now() / 120, true, 'pistol');
     ctx.fillStyle = '#e8e8e8';
     ctx.font = 'bold 8px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('PD', cop.x - cam.x, cop.y - cam.y - 18);
+    ctx.fillText('PD', cop.x, cop.y - 18);
     ctx.textAlign = 'left';
   }
   const p = game.player;
   if (!p.dead && !p.inCar) {
-    drawPerson(ctx, p.x - cam.x, p.y - cam.y, p.angle, p, performance.now() / 120, p.walking, game.arsenal.current);
-    // Aiming line toward the mouse.
-    const mx = game.input.mouse.x;
-    const my = game.input.mouse.y;
-    const aim = Math.atan2(my - (p.y - cam.y), mx - (p.x - cam.x));
+    drawPerson(ctx, p.x, p.y, p.angle, p, performance.now() / 120, p.walking, game.arsenal.current);
+    // Aiming line: toward the world point under the mouse when the mouse
+    // has aimed, else along the facing. Drawn in world coords, so the
+    // camera transform carries it onto the screen.
+    const aim = game.aimWorld
+      ? Math.atan2(game.aimWorld.y - p.y, game.aimWorld.x - p.x)
+      : p.angle;
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.beginPath();
-    ctx.moveTo(p.x - cam.x, p.y - cam.y);
-    ctx.lineTo(p.x - cam.x + Math.cos(aim) * 46, p.y - cam.y + Math.sin(aim) * 46);
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.x + Math.cos(aim) * 46, p.y + Math.sin(aim) * 46);
     ctx.stroke();
   }
 }
@@ -687,15 +766,15 @@ export function drawEffects(ctx, game, cam) {
     ctx.strokeStyle = `rgba(255, 220, 120, ${Math.max(0, t.life / 0.08)})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(t.x1 - cam.x, t.y1 - cam.y);
-    ctx.lineTo(t.x2 - cam.x, t.y2 - cam.y);
+    ctx.moveTo(t.x1, t.y1);
+    ctx.lineTo(t.x2, t.y2);
     ctx.stroke();
   }
   ctx.lineWidth = 1;
   // Muzzle flash: a star burst + glow at the weapon tip.
   if (game.muzzle && game.muzzle.life > 0) {
-    const mx = game.muzzle.x - cam.x;
-    const my = game.muzzle.y - cam.y;
+    const mx = game.muzzle.x;
+    const my = game.muzzle.y;
     const a = game.muzzle.angle;
     const s = 10 + game.muzzle.life * 60;
     ctx.fillStyle = 'rgba(255, 240, 180, 0.35)';
@@ -730,7 +809,7 @@ export function drawEffects(ctx, game, cam) {
       const ang = (i / pt.n) * Math.PI * 2 + pt.life * 3;
       const r = (1 - a) * 26;
       ctx.beginPath();
-      ctx.arc(pt.x - cam.x + Math.cos(ang) * r, pt.y - cam.y + Math.sin(ang) * r, 3, 0, Math.PI * 2);
+      ctx.arc(pt.x + Math.cos(ang) * r, pt.y + Math.sin(ang) * r, 3, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -767,14 +846,15 @@ export function drawLighting(ctx, game) {
 }
 
 export function drawObjectiveMarker(ctx, game, cam) {
+  // Screen space: the marker's world point is projected through the
+  // camera, then clamped to the screen edge so it always points the way.
   const pt = game.objectivePoint ? game.objectivePoint() : null;
   if (!pt) return;
-  const px = pt.x - cam.x;
-  const py = pt.y - cam.y;
+  const s = worldToScreen(cam, pt.x, pt.y);
   const vw = ctx.canvas.width;
   const vh = ctx.canvas.height;
-  const cx = Math.max(30, Math.min(vw - 30, px));
-  const cy = Math.max(30, Math.min(vh - 30, py));
+  const cx = Math.max(30, Math.min(vw - 30, s.x));
+  const cy = Math.max(30, Math.min(vh - 30, s.y));
   const pulse = 1 + Math.sin(performance.now() / 300) * 0.15;
   ctx.strokeStyle = '#ffd94a';
   ctx.lineWidth = 3;

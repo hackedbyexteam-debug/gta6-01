@@ -33,16 +33,21 @@ export function createPlayer(x, y) {
   };
 }
 
+// On-foot movement. move is a WORLD-space vector {mx, my, sprint} — the
+// caller converts WASD to world space relative to the facing (see
+// relativeMove in camera.js), so W always walks up-screen under the
+// rotating camera. The facing angle lives with the caller (mouse aim, or
+// the movement direction when the mouse has never moved); this function
+// never sets it, so walking never fights the aim.
 export function updatePlayerOnFoot(p, move, dt, world, vehicles) {
   const speed = move.sprint ? 210 : 135;
-  const mx = (move.right ? 1 : 0) - (move.left ? 1 : 0);
-  const my = (move.down ? 1 : 0) - (move.up ? 1 : 0);
+  const mx = move.mx || 0;
+  const my = move.my || 0;
   p.walking = mx !== 0 || my !== 0;
   if (p.walking) {
     const len = Math.hypot(mx, my) || 1;
     const nx = p.x + (mx / len) * speed * dt;
     const ny = p.y + (my / len) * speed * dt;
-    p.angle = Math.atan2(my, mx);
     const c = collideCircleBuildings(nx, ny, p.radius, world);
     p.x = Math.max(16, Math.min(WORLD_W - 16, c.x));
     p.y = Math.max(16, Math.min(WORLD_H - 16, c.y));
