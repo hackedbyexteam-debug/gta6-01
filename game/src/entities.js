@@ -28,6 +28,8 @@ export function createPlayer(x, y) {
     x, y, angle: -Math.PI / 2, speed: 0, radius: 13,
     health: 100, armor: 0, inCar: null, walking: false,
     punchTimer: 0, shootTimer: 0, dead: false,
+    // Rico Vega: gold shirt, black hair, dark jeans.
+    color: '#e8c85a', hair: '#1a1a1a', pants: '#2a3a5c', hat: false,
   };
 }
 
@@ -63,7 +65,12 @@ export function updatePlayerOnFoot(p, move, dt, world, vehicles) {
 export function createPed(x, y, rng) {
   return {
     x, y, angle: rng.range(0, Math.PI * 2), speed: rng.range(28, 52),
-    radius: 11, color: rng.pick(['#e8b73a', '#7d8aa0', '#a03a3a', '#5a7d5a', '#d4d4d4', '#3a6b8a']),
+    radius: 11,
+    // Varied clothes so the crowd never looks like clones.
+    color: rng.pick(['#e8b73a', '#7d8aa0', '#a03a3a', '#5a7d5a', '#d4d4d4', '#3a6b8a', '#c86b8a', '#6b5a8a']),
+    hair: rng.pick(['#1a1a1a', '#4a2f1a', '#8a6b3a', '#a8a8a8', '#5a2a1a', '#2a2a2a', '#7a4a2a']),
+    pants: rng.pick(['#2a3a5c', '#3a3a3a', '#5c4a3a', '#2f4a3a', '#4a4a5a', '#6b5a3a']),
+    hat: rng.chance(0.22),
     panic: 0, dead: false, walkPhase: rng.range(0, Math.PI * 2),
     target: null,
   };

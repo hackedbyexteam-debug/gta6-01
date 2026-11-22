@@ -3,21 +3,21 @@
 // single edit here instead of a hunt through the modules.
 
 export const TILE = 32;
-export const MAP_W = 96;
-export const MAP_H = 96;
+export const MAP_W = 64;
+export const MAP_H = 64;
 export const WORLD_W = MAP_W * TILE;
 export const WORLD_H = MAP_H * TILE;
 
 // Tile kinds in world.tiles
 export const T = { BLOCK: 0, ROAD: 1, WALK: 2, PARK: 3, BEACH: 4, WATER: 5 };
 
-// City districts, laid out west to east, north to south.
+// City districts, laid out west to east, north to south (64x64 map).
 export const DISTRICTS = [
-  { id: 'downtown', name: 'Downtown Solmar', x0: 8, y0: 8, x1: 44, y1: 40, palette: ['#3a4a6b', '#4a5a7d', '#2f3d5c', '#55648a'], skyline: true },
-  { id: 'ironworks', name: 'Ironworks', x0: 48, y0: 8, x1: 88, y1: 40, palette: ['#5c4a3a', '#6b5644', '#4a3d33', '#7a6550'], skyline: false },
-  { id: 'central', name: 'Central Park', x0: 8, y0: 44, x1: 44, y1: 64, palette: ['#2f5c3a', '#3a6b45', '#27512f', '#4a7d55'], skyline: false },
-  { id: 'harbor', name: 'Harbor District', x0: 48, y0: 44, x1: 88, y1: 64, palette: ['#3a5c6b', '#446b7d', '#2f4a5c', '#557a8a'], skyline: false },
-  { id: 'beach', name: 'Solmar Beach', x0: 8, y0: 68, x1: 88, y1: 88, palette: ['#c2a878', '#d4bc8a', '#b39a6b', '#e0c896'], skyline: false },
+  { id: 'downtown', name: 'Downtown Solmar', x0: 4, y0: 4, x1: 30, y1: 26, palette: ['#3a4a6b', '#4a5a7d', '#2f3d5c', '#55648a'], skyline: true },
+  { id: 'ironworks', name: 'Ironworks', x0: 34, y0: 4, x1: 60, y1: 26, palette: ['#5c4a3a', '#6b5644', '#4a3d33', '#7a6550'], skyline: false },
+  { id: 'central', name: 'Central Park', x0: 4, y0: 30, x1: 30, y1: 42, palette: ['#2f5c3a', '#3a6b45', '#27512f', '#4a7d55'], skyline: false },
+  { id: 'harbor', name: 'Harbor District', x0: 34, y0: 30, x1: 60, y1: 42, palette: ['#3a5c6b', '#446b7d', '#2f4a5c', '#557a8a'], skyline: false },
+  { id: 'beach', name: 'Solmar Beach', x0: 4, y0: 46, x1: 60, y1: 58, palette: ['#c2a878', '#d4bc8a', '#b39a6b', '#e0c896'], skyline: false },
 ];
 
 export const VEHICLES = [

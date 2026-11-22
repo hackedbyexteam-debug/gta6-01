@@ -116,6 +116,33 @@ function drawMinimap(ctx, game) {
   const size = 150;
   const x = ctx.canvas.width - size - 16;
   const y = 16;
+  if (game.mode === 'interior' && game.interior) {
+    // Room map: the floor, furniture, the green exit and the player.
+    const it = game.interior;
+    const scale = size / Math.max(it.pxW, it.pxH);
+    const w = it.pxW * scale;
+    const h = it.pxH * scale;
+    const ox = x + (size - w) / 2;
+    const oy = y + (size - h) / 2;
+    ctx.fillStyle = 'rgba(8, 12, 18, 0.85)';
+    ctx.fillRect(x - 4, y - 4, size + 8, size + 8);
+    ctx.fillStyle = '#3a3f46';
+    ctx.fillRect(ox, oy, w, h);
+    ctx.fillStyle = '#8a7a5a';
+    for (const f of it.furniture) {
+      if (!f.solid) continue;
+      ctx.fillRect(ox + f.x * scale, oy + f.y * scale, Math.max(2, f.w * scale), Math.max(2, f.h * scale));
+    }
+    ctx.fillStyle = '#3ecf6e';
+    ctx.fillRect(ox + it.exit.x * scale - 2, oy + it.exit.y * scale - 2, 4, 4);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(ox + game.player.x * scale, oy + game.player.y * scale, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.strokeRect(x - 4, y - 4, size + 8, size + 8);
+    return;
+  }
   const scale = size / (MAP_W * TILE);
   ctx.fillStyle = 'rgba(8, 12, 18, 0.85)';
   ctx.fillRect(x - 4, y - 4, size + 8, size + 8);

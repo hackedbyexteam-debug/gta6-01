@@ -4,16 +4,36 @@
 // bump and scrape.
 import { VEHICLES } from './config.js';
 
+// Per-type body shapes the renderer draws (and the harness checks):
+// length/width in px, cabin offset from center (+ = toward the front),
+// cabin length, and the extras that make each type read at a glance.
+export const CAR_SHAPES = {
+  sedan: { len: 46, wid: 22, cabin: 4, cabinLen: 18, kind: 'sedan' },
+  taxi: { len: 46, wid: 22, cabin: 4, cabinLen: 18, kind: 'sedan', taxi: true },
+  coupe: { len: 44, wid: 20, cabin: 2, cabinLen: 16, kind: 'coupe' },
+  van: { len: 54, wid: 24, cabin: -8, cabinLen: 22, kind: 'van' },
+  truck: { len: 58, wid: 24, cabin: 14, cabinLen: 12, kind: 'truck' },
+  sports: { len: 48, wid: 20, cabin: 0, cabinLen: 16, kind: 'sports', spoiler: true },
+  police: { len: 46, wid: 22, cabin: 4, cabinLen: 18, kind: 'sedan', police: true },
+};
+
+export function carShape(id) {
+  return CAR_SHAPES[id] || CAR_SHAPES.sedan;
+}
+
 export function vehicleDef(id) {
   return VEHICLES.find((v) => v.id === id) || VEHICLES[0];
 }
 
 export function createVehicle(defId, x, y, angle) {
   const def = vehicleDef(defId);
+  // A deterministic shade variation so two sedans on the street never look
+  // identical: -2..2 steps of lightness from the base colour.
+  const tint = (((Math.round(x) * 13 + Math.round(y) * 7) % 5) + 5) % 5 - 2;
   return {
     def, x, y, angle: angle || 0, speed: 0,
-    health: def.health, color: def.color, dead: false,
-    skid: 0, honk: 0,
+    health: def.health, color: def.color, tint,
+    dead: false, skid: 0, honk: 0,
   };
 }
 

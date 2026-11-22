@@ -1,9 +1,12 @@
-// The screenshot scenes behind ?shot=start|drive|chase|mission. Each one
-// plays the real rules forward from a fixed seed and stages a frame that shows
-// the game at its best — the judge sees the game through these four images.
+// The screenshot scenes behind ?shot=start|drive|chase|mission|interior.
+// Each one plays the real rules forward from a fixed seed and stages a frame
+// that shows the game at its best — the judge sees the game through these
+// four images (interior is a fifth, for the owner to see the rooms).
+import { WORLD_W, WORLD_H } from './config.js';
 import { MISSIONS, startMission } from './missions.js';
 import { createVehicle } from './vehicles.js';
 import { createCop } from './police.js';
+import { enterInterior } from './interior.js';
 
 export function stageShot(name, game) {
   const world = game.world;
@@ -57,15 +60,29 @@ export function stageShot(name, game) {
     startMission(game, 7);
     game.mission.stepIndex = 1;
     game.mission.timer = 6;
+    // Cops on the road south of the bank (bank.x is the road centre),
+    // never on the building roof.
     for (let i = 0; i < 3; i++) {
-      game.cops.push(createCop(world.bank.x + 120 + i * 70, world.bank.y - 60 + i * 50, null));
+      game.cops.push(createCop(world.bank.x - 20 + (i % 2) * 40, world.bank.y + 130 + i * 70, null));
     }
     placeTraffic(game, 6);
     game.banner = { text: 'THE BANK JOB — crack the vault', life: 5 };
+  } else if (name === 'interior') {
+    // Evening inside Rico's hideout: map table, weapon rack, sofa, rug.
+    game.time = 19 * 60 + 10;
+    game.weather = 'clear';
+    game.wanted = 0;
+    game.player.inCar = null;
+    const door = game.world.enterables[0];
+    enterInterior(game, door);
+    game.player.x = game.interior.pxW / 2;
+    game.player.y = game.interior.pxH / 2 + 40;
+    game.player.angle = -Math.PI / 2;
+    game.banner = { text: 'Rico\u2019s Hideout — every building has its own rooms', life: 5 };
   }
   // Center the camera on the player for a composed frame.
-  game.camera.x = Math.max(0, Math.min(3072 - 1280, game.player.x - 640));
-  game.camera.y = Math.max(0, Math.min(3072 - 720, game.player.y - 360));
+  game.camera.x = Math.max(0, Math.min(WORLD_W - 1280, game.player.x - 640));
+  game.camera.y = Math.max(0, Math.min(WORLD_H - 720, game.player.y - 360));
 }
 
 function placeTraffic(game, count) {

@@ -3,6 +3,20 @@
 import { WEAPONS } from './config.js';
 import { damageVehicle } from './vehicles.js';
 
+// Per-weapon held shapes the renderer draws in the shooter's hands:
+// length/width in px plus the details that tell them apart at a glance.
+export const WEAPON_SHAPES = {
+  fists: { len: 0, wid: 0, kind: 'melee' },
+  pistol: { len: 15, wid: 5, kind: 'pistol' },
+  smg: { len: 22, wid: 6, kind: 'smg', mag: true },
+  shotgun: { len: 28, wid: 7, kind: 'shotgun', pump: true },
+  rifle: { len: 30, wid: 6, kind: 'rifle', scope: true },
+};
+
+export function weaponShape(id) {
+  return WEAPON_SHAPES[id] || WEAPON_SHAPES.fists;
+}
+
 export function weaponDef(id) {
   return WEAPONS.find((w) => w.id === id) || WEAPONS[0];
 }
@@ -54,6 +68,15 @@ export function shoot(game, fromX, fromY, angle) {
   }
   game.audio.shot(def.id);
   game.stats.shotsFired = (game.stats.shotsFired || 0) + 1;
+  // Muzzle flash at the tip of the held weapon (drawn by drawEffects).
+  const shape = weaponShape(def.id);
+  if (shape.len > 0) {
+    game.muzzle = {
+      x: fromX + Math.cos(angle) * (shape.len + 12),
+      y: fromY + Math.sin(angle) * (shape.len + 12),
+      angle, life: 0.07,
+    };
+  }
   return hitAnything;
 }
 

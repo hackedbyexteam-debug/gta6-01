@@ -12,7 +12,8 @@ import { createPlayer, updatePlayerOnFoot, createPed, updatePed, createTrafficCa
 import { createArsenal, weaponDef, shoot, reloadWeapon, updatePickups, buyWeapon } from './combat.js';
 import { updatePolice, damagePlayer, clearWantedAtGarage } from './police.js';
 import { MISSIONS as MISSION_DEFS, startMission, updateMission, currentStep, locationPoint, objectivePoint } from './missions.js';
-import { drawWorld, drawPickups, drawVehicles, drawPeople, drawEffects, drawLighting, drawObjectiveMarker, lightFactor } from './render.js';
+import { enterInterior, exitInterior, interiorDoorAt, updateInteriorPlayer } from './interior.js';
+import { drawWorld, drawPickups, drawVehicles, drawPeople, drawEffects, drawLighting, drawObjectiveMarker, drawInterior, lightFactor } from './render.js';
 import { drawHUD, drawTitle, drawBriefing, drawPhone, drawPaused, drawDead, drawBusted, drawComplete } from './hud.js';
 import { saveGame, loadGame, clearSave, applySave } from './save.js';
 import { stageShot } from './shots.js';
@@ -65,6 +66,12 @@ const game = {
   fareTimer: 20,
   bustedTimer: 0,
   savedMissions: 0,
+  // Interiors: 'outdoor' (the city) or 'interior' (inside a building).
+  mode: 'outdoor',
+  interior: null,
+  interiorReturn: null,
+  interiorCooldown: 0,
+  muzzle: null,
 };
 
 game.objectivePoint = () => {
@@ -202,6 +209,31 @@ function updatePlaying(dt) {
     game.weatherTimer = 45 + Math.random() * 40;
     game.weather = game.weather === 'rain' ? 'clear' : (Math.random() < 0.3 ? 'rain' : 'clear');
   }
+  if (game.muzzle) {
+    game.muzzle.life -= dt;
+    if (game.muzzle.life <= 0) game.muzzle = null;
+  }
+  game.interiorCooldown = Math.max(0, game.interiorCooldown - dt);
+
+  // Inside a building the world pauses: just walk the room and find the exit.
+  if (game.mode === 'interior' && game.interior) {
+    updateInteriorPlayer(p, {
+      up: input.held(ACTION.UP),
+      down: input.held(ACTION.DOWN),
+      left: input.held(ACTION.LEFT),
+      right: input.held(ACTION.RIGHT),
+      sprint: input.held(ACTION.SPRINT),
+    }, dt, game.interior);
+    const ex = game.interior.exit;
+    if (Math.hypot(p.x - ex.x, p.y - ex.y) < 28) exitInterior(game);
+    for (const pt of game.particles) pt.life -= dt;
+    game.particles = game.particles.filter((pt) => pt.life > 0);
+    if (game.banner) {
+      game.banner.life -= dt;
+      if (game.banner.life <= 0) game.banner = null;
+    }
+    return;
+  }
 
   // Movement: on foot or driving.
   if (p.inCar) {
@@ -251,6 +283,12 @@ function updatePlaying(dt) {
         if (game.arsenal.owned.includes(def.id)) game.arsenal.current = def.id;
       }
     });
+  }
+
+  // Walk into a building's door and you step inside (on foot only).
+  if (!p.inCar && game.interiorCooldown <= 0) {
+    const door = interiorDoorAt(game.world, p.x, p.y);
+    if (door) enterInterior(game, door);
   }
 
   // Enter / exit cars, shops, missions.
@@ -390,6 +428,13 @@ function render() {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   if (game.state === 'title') {
     drawTitle(ctx, game);
+    return;
+  }
+  if (game.mode === 'interior' && game.interior) {
+    drawInterior(ctx, game);
+    drawHUD(ctx, game);
+    if (game.state === 'paused') drawPaused(ctx);
+    else if (game.state === 'phone') drawPhone(ctx, game);
     return;
   }
   drawWorld(ctx, game, game.camera);
