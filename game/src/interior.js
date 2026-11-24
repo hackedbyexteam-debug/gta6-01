@@ -14,6 +14,46 @@ export const ROOM_PX_W = ROOM_W * TILE;
 export const ROOM_PX_H = ROOM_H * TILE;
 const WALL = TILE; // wall thickness in px
 
+// 3D presence for every furniture kind: height in three.js units and the
+// colour the 3D room builder (render.js) gives the box. Rugs lie flat,
+// wardrobes and racks stand tall — the same layout data drives the 2D
+// overlay fallback and the 3D room, so the two can never disagree about
+// where anything is.
+export const FURNITURE_3D = {
+  bed: { h: 0.8, color: '#e8e4da' },
+  wardrobe: { h: 2.0, color: '#5c4028' },
+  lamp: { h: 1.2, color: '#ffd94a' },
+  maptable: { h: 1.0, color: '#e8dcc0' },
+  rack: { h: 2.2, color: '#3a2f26' },
+  shelf: { h: 2.0, color: '#5c4028' },
+  crate: { h: 0.8, color: '#8a6b3a' },
+  bench: { h: 0.9, color: '#6b6f76' },
+  tires: { h: 0.7, color: '#14161a' },
+  tools: { h: 0.4, color: '#6b4a2f' },
+  cabinet: { h: 1.8, color: '#7a7f86' },
+  drums: { h: 1.1, color: '#3a5a7d' },
+  desk: { h: 1.0, color: '#a87d4a' },
+  table: { h: 0.9, color: '#6b4a2f' },
+  chair: { h: 0.9, color: '#5c4028' },
+  sofa: { h: 0.9, color: '#5a4a7d' },
+  tv: { h: 0.7, color: '#1a1d22' },
+  rug: { h: 0.06, color: '#7d3a3a' },
+  counter: { h: 1.1, color: '#c8b89a' },
+  cashier: { h: 1.1, color: '#8a7a5a' },
+  plant: { h: 1.0, color: '#3a7d45' },
+  bookshelf: { h: 2.2, color: '#5c4028' },
+  lift: { h: 0.5, color: '#3a3a3a' },
+  stove: { h: 1.0, color: '#2a2f36' },
+  fridge: { h: 1.9, color: '#c8ccd2' },
+  sink: { h: 0.9, color: '#8a8f96' },
+  tub: { h: 0.7, color: '#f2f2f2' },
+  toilet: { h: 0.6, color: '#f2f2f2' },
+};
+
+export function furniture3D(kind) {
+  return FURNITURE_3D[kind] || { h: 0.9, color: '#8a8f96' };
+}
+
 // Furniture: {x, y, w, h, kind, solid?} in room-local px. Partitions in
 // `walls` are solid rects that split the room into living/kitchen/bed/bath.
 const LAYOUTS = {

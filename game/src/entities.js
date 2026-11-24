@@ -28,8 +28,9 @@ export function createPlayer(x, y) {
     x, y, angle: -Math.PI / 2, speed: 0, radius: 13,
     health: 100, armor: 0, inCar: null, walking: false,
     punchTimer: 0, shootTimer: 0, dead: false,
-    // Rico Vega: gold shirt, black hair, dark jeans.
-    color: '#e8c85a', hair: '#1a1a1a', pants: '#2a3a5c', hat: false,
+    // Dario Kane: teal jacket, black hair, dark jeans — the look that
+    // reads in the dark, under neon, from a chase camera.
+    color: '#2a9d8f', hair: '#1a1a1a', pants: '#232a38', hat: false,
   };
 }
 
@@ -72,7 +73,7 @@ export function createPed(x, y, rng) {
     x, y, angle: rng.range(0, Math.PI * 2), speed: rng.range(28, 52),
     radius: 11,
     // Varied clothes so the crowd never looks like clones.
-    color: rng.pick(['#e8b73a', '#7d8aa0', '#a03a3a', '#5a7d5a', '#d4d4d4', '#3a6b8a', '#c86b8a', '#6b5a8a']),
+    color: rng.pick(['#e8b73a', '#7d8aa0', '#a03a3a', '#5a7d5a', '#d4d4d4', '#3a6b8a', '#c86b8a', '#6b5a8a', '#2a9d8f', '#e8762a']),
     hair: rng.pick(['#1a1a1a', '#4a2f1a', '#8a6b3a', '#a8a8a8', '#5a2a1a', '#2a2a2a', '#7a4a2a']),
     pants: rng.pick(['#2a3a5c', '#3a3a3a', '#5c4a3a', '#2f4a3a', '#4a4a5a', '#6b5a3a']),
     hat: rng.chance(0.22),
@@ -120,23 +121,56 @@ export function createTrafficCar(world, rng) {
 
 export function updateTrafficCar(v, dt, world, rng, others) {
   if (v.dead) return;
-  // Cruise forward; at intersections sometimes turn.
+  // Cruise forward; at intersections sometimes turn. A car only turns
+  // while it is actually on the road — a car that has wandered off-road
+  // steers back instead of turning further into the blocks.
   const tx = Math.floor(v.x / TILE);
   const ty = Math.floor(v.y / TILE);
+  const onRoad = world.isRoadTile(tx, ty);
   const onLine = (tx % 8 === 0 || tx % 8 === 1 || ty % 8 === 0 || ty % 8 === 1);
-  if (onLine && rng.chance(dt * 0.5)) {
+  if (onRoad && onLine && rng.chance(dt * 0.5)) {
     const turns = [-Math.PI / 2, Math.PI / 2];
     v.angle += rng.pick(turns);
+  }
+  if (!onRoad) {
+    // Steer back to the nearest road line — never teleport. Road tile
+    // indices are 8k and 8k+1; the car aims at whichever line (the
+    // vertical or the horizontal one) is closer, and drives there. If
+    // it wedges against a building (speed collapsed for 0.5 s while
+    // off-road), it tries the other axis instead of grinding the same
+    // wall forever — the old code teleported it out, which was a
+    // visible pop; this is the honest fix.
+    const roadIdx = [8, 9, 16, 17, 24, 25, 32, 33, 40, 41, 48, 49, 56, 57];
+    const nearest = (t) => {
+      let best = roadIdx[0];
+      let bd = Infinity;
+      for (const r of roadIdx) {
+        const d = Math.abs(r - t);
+        if (d < bd) { bd = d; best = r; }
+      }
+      return best;
+    };
+    const nx = (nearest(tx) + 0.5) * TILE;
+    const ny = (nearest(ty) + 0.5) * TILE;
+    const closerX = Math.abs(nx - v.x) < Math.abs(ny - v.y);
+    if (v.offRoadAxis === undefined) v.offRoadAxis = closerX ? 'x' : 'y';
+    if (Math.abs(v.speed) < 15) {
+      v.offRoadStuckT = (v.offRoadStuckT || 0) + dt;
+      if (v.offRoadStuckT > 0.5) {
+        v.offRoadAxis = v.offRoadAxis === 'x' ? 'y' : 'x';
+        v.offRoadStuckT = 0;
+      }
+    } else {
+      v.offRoadStuckT = 0;
+    }
+    const goX = v.offRoadAxis === 'x';
+    v.angle = Math.atan2(goX ? 0 : ny - v.y, goX ? nx - v.x : 0);
+  } else {
+    v.offRoadAxis = undefined;
+    v.offRoadStuckT = 0;
   }
   const target = v.def.topSpeed * 0.45;
   if (v.speed < target) v.speed += v.def.accel * 0.5 * dt;
   else v.speed -= 40 * dt;
   updateVehicle(v, { forward: true, back: false, left: false, right: false, brake: false }, dt, world, others);
-  // Keep traffic on the road grid: if it wanders off-road, steer back.
-  if (!world.isRoadTile(Math.floor(v.x / TILE), Math.floor(v.y / TILE))) {
-    const p = world.randomRoadPoint();
-    v.x = p.x;
-    v.y = p.y;
-    v.angle = rng.chance(0.5) ? 0 : Math.PI / 2;
-  }
 }

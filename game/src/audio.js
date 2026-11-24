@@ -16,6 +16,12 @@ export function createAudio() {
   let step = 0;
   const bassline = [55, 0, 55, 65.4, 49, 0, 58.3, 65.4, 55, 0, 55, 73.4, 82.4, 73.4, 65.4, 58.3];
 
+  // The game state the audio last heard ('title', 'playing', 'paused',
+  // ...). The music timer only ever allocates a node while the game is
+  // actually playing: on the title screen or while paused it stays
+  // silent instead of minting oscillators into the void forever.
+  let audioState = 'title';
+
   function ensure() {
     if (ctx) return true;
     try {
@@ -94,7 +100,7 @@ export function createAudio() {
   function startMusic() {
     if (musicTimer || !ctx) return;
     musicTimer = setInterval(() => {
-      if (!musicOn || !ctx) return;
+      if (!musicOn || !ctx || audioState !== 'playing') return;
       const f = bassline[step % bassline.length];
       step++;
       if (f > 0) {
@@ -115,6 +121,24 @@ export function createAudio() {
   }
 
   return {
+    // Called every frame by the main loop; only acts on a change.
+    setState(s) {
+      if (s === audioState) return;
+      audioState = s;
+      if (s !== 'playing') {
+        // Silence everything the moment play stops: no siren interval
+        // ticking, no engine hum, no music notes while paused or on
+        // the title screen.
+        if (sirenTimer) {
+          clearInterval(sirenTimer);
+          sirenTimer = null;
+        }
+        if (ctx) {
+          sirenGain.gain.value = 0;
+          engineGain.gain.value = 0;
+        }
+      }
+    },
     unlock() {
       if (ensure() && ctx.state === 'suspended') ctx.resume();
     },
@@ -146,6 +170,8 @@ export function createAudio() {
       if (!ctx) return;
       if (weaponId === 'shotgun') noise(0.16, 0.5, 1800);
       else if (weaponId === 'rifle') noise(0.2, 0.45, 2400);
+      else if (weaponId === 'sniper') { noise(0.22, 0.5, 3200); blip(1200, 0.06, 'square', 0.15, 300); }
+      else if (weaponId === 'bazooka') noise(0.5, 0.6, 500);
       else if (weaponId === 'smg') noise(0.06, 0.3, 3200);
       else if (weaponId === 'pistol') noise(0.09, 0.4, 2600);
       else blip(180, 0.08, 'sine', 0.25, 90);

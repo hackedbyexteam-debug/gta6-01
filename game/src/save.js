@@ -1,4 +1,4 @@
-// Save and load: Rico's progress lives in localStorage, so the story survives
+// Save and load: Dario's progress lives in localStorage, so the story survives
 // a closed tab. Autosave runs after every mission and on pause.
 const KEY = 'solmar-heat-save-v1';
 

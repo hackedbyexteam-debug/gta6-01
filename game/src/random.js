@@ -23,5 +23,21 @@ export function createRandom(seed) {
     chance(p) {
       return next() < p;
     },
+    // A child stream seeded from the current state: deterministic staging
+    // (screenshot traffic, ped colours) that never disturbs the main
+    // stream's world generation, so the city stays identical.
+    fork() {
+      return createRandom((a ^ 0x9e3779b9) >>> 0);
+    },
+    // Fisher-Yates, in place, on the caller's own array copy.
+    shuffle(list) {
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(next() * (i + 1));
+        const t = list[i];
+        list[i] = list[j];
+        list[j] = t;
+      }
+      return list;
+    },
   };
 }

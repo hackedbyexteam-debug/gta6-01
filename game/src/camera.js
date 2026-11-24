@@ -1,13 +1,13 @@
-// GTA-style follow camera for SOLMAR HEAT: zoomed in close, rotating so the
-// player's facing is always up-screen, the player sitting below centre so
-// the road ahead reads wider than what's behind. The camera only steers
-// the RENDER — world logic (movement, combat, police, missions, traffic)
-// never sees it, and the minimap stays north-up. Pure math, no DOM, so the
-// harness drives it directly.
+// Third-person chase camera for SOLMAR HEAT (3D): the camera rides behind
+// the player or their car, low and close, swinging smoothly onto the facing
+// so the road ahead is always up-screen — the GTA follow feel, now in 3D.
+// The camera only steers the RENDER — world logic (movement, combat,
+// police, missions, traffic) never sees it, and the minimap stays north-up.
 //
-// Angles are world angles: 0 = east (+x), -PI/2 = north (-y). On screen,
-// up is -y, so a facing angle of theta is drawn with a rotation of
-// -(theta + PI/2): north faces up with no rotation at all.
+// Angles are world angles: 0 = east (+x), -PI/2 = north (-y in 2D, -z in 3D).
+// The 3D renderer (render.js) converts this state into a perspective
+// camera: position = target - forward * dist + up * height, looking a few
+// metres ahead of the target.
 import { WORLD_W, WORLD_H } from './config.js';
 
 // The canvas main.js draws into (its internal size, not the CSS size).
@@ -18,14 +18,27 @@ const VH = 720;
 // below centre, so more of the screen shows the road ahead than behind.
 export const PLAYER_SCREEN_Y = 0.62;
 
-// Zoom: on foot the world is close and readable; in a car the camera
-// pulls back as speed rises, so the road ahead stays visible.
-export const ZOOM_FOOT = 2.0;
-export const ZOOM_CAR_SLOW = 1.9;
-export const ZOOM_CAR_FAST = 1.3;
+// Chase distances (three.js units): on foot the camera is close and low;
+// in a car it pulls back and rises as speed grows. Kept close and high
+// enough to see over the low rooftops that line the roads — and high
+// enough that the view tilts down into the street, so the buildings read
+// as tall 3D volume with real depth, never a flat top-down map.
+export const CAM_FOOT_DIST = 7;
+export const CAM_FOOT_HEIGHT = 5.2;
+export const CAM_CAR_DIST_SLOW = 9.5;
+export const CAM_CAR_DIST_FAST = 13;
+export const CAM_CAR_HEIGHT = 7;
 
 export function createCamera(x, y) {
-  return { x, y, angle: -Math.PI / 2, zoom: ZOOM_FOOT };
+  return {
+    x, y, angle: -Math.PI / 2,
+    // Smoothed 3D chase state: the renderer reads dist/height each frame.
+    dist: CAM_FOOT_DIST, height: CAM_FOOT_HEIGHT,
+    // Smoothed camera eye (three.js units, world-centred) so the chase
+    // never snaps: render.js lerps the real camera toward these.
+    eyeX: 0, eyeY: 6, eyeZ: 0, lookX: 0, lookY: 1, lookZ: 0,
+    zoom: 1,
+  };
 }
 
 // Shortest signed arc from a to b, in (-PI, PI].
@@ -42,21 +55,34 @@ export function angleLerp(a, b, t) {
   return a + angleDiff(a, b) * Math.min(1, Math.max(0, t));
 }
 
+// Chase distance for the current state: foot vs car, speed-stretched.
 export function zoomFor(player) {
-  if (!player.inCar) return ZOOM_FOOT;
+  if (!player.inCar) return 1;
   const car = player.inCar;
-  const f = Math.min(1, Math.abs(car.speed) / car.def.topSpeed);
-  return ZOOM_CAR_SLOW - (ZOOM_CAR_SLOW - ZOOM_CAR_FAST) * f;
+  return Math.min(1, Math.abs(car.speed) / car.def.topSpeed);
+}
+
+export function chaseDist(player, settings) {
+  const far = settings && settings.camera === 'far';
+  if (!player.inCar) return far ? CAM_FOOT_DIST + 2.5 : CAM_FOOT_DIST;
+  const f = Math.min(1, Math.abs(player.inCar.speed) / player.inCar.def.topSpeed);
+  const base = CAM_CAR_DIST_SLOW + (CAM_CAR_DIST_FAST - CAM_CAR_DIST_SLOW) * f;
+  return far ? base + 3 : base;
+}
+
+export function chaseHeight(player, settings) {
+  const far = settings && settings.camera === 'far';
+  if (!player.inCar) return far ? CAM_FOOT_HEIGHT + 1.5 : CAM_FOOT_HEIGHT;
+  return far ? CAM_CAR_HEIGHT + 1.5 : CAM_CAR_HEIGHT;
 }
 
 // Ease the camera onto its target: position fast, angle smooth (a slower
-// turn reads as a camera swinging around, never a snap), zoom slowest.
+// turn reads as a camera swinging around, never a snap).
 export function updateCamera(cam, focusX, focusY, targetAngle, targetZoom, dt) {
   const k = Math.min(1, dt * 5);
   cam.x += (focusX - cam.x) * k;
   cam.y += (focusY - cam.y) * k;
   cam.angle = angleLerp(cam.angle, targetAngle, Math.min(1, dt * 4.5));
-  cam.zoom += (targetZoom - cam.zoom) * Math.min(1, dt * 2.5);
   cam.x = Math.max(0, Math.min(WORLD_W, cam.x));
   cam.y = Math.max(0, Math.min(WORLD_H, cam.y));
 }
@@ -66,13 +92,15 @@ export function snapCamera(cam, focusX, focusY, angle, zoom) {
   cam.x = focusX;
   cam.y = focusY;
   cam.angle = angle;
-  cam.zoom = zoom;
+  cam.zoom = zoom || 1;
+  // Tell the 3D renderer to snap its smoothed eye on the next frame,
+  // so the first rendered frame is already composed.
+  cam._snap = true;
 }
 
-// Screen px (canvas coords) of a world point under this camera.
-// The canvas transform in render() is the same math:
-// translate(VW/2, VH*PLAYER_SCREEN_Y) -> scale(zoom) ->
-// rotate(-(angle + PI/2)) -> translate(-cam.x, -cam.y).
+// Screen px (canvas coords) of a world point under this camera — kept for
+// the 2D overlay math (HUD markers). The 3D projection lives in render.js
+// (projectToScreen) and is the one the live game uses.
 export function worldToScreen(cam, wx, wy, viewW = VW, viewH = VH) {
   const dx = wx - cam.x;
   const dy = wy - cam.y;
@@ -94,9 +122,7 @@ export function screenToWorld(cam, sx, sy, viewW = VW, viewH = VH) {
   return { x: cam.x + dx, y: cam.y + dy };
 }
 
-// World-space AABB of the visible view (plus a margin, in world px):
-// the four screen corners back-projected, so culling stays correct while
-// the view rotates. Renderers cull against this, never against screen px.
+// World-space AABB of the visible view (plus a margin, in world px).
 export function viewBounds(cam, viewW = VW, viewH = VH, margin = 96) {
   const corners = [
     screenToWorld(cam, 0, 0, viewW, viewH),

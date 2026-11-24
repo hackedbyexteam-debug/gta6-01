@@ -60,11 +60,25 @@ export function updateVehicle(v, input, dt, world, others) {
   let hit = false;
   if (world.buildingAt(nx, ny)) {
     hit = true;
-    if (Math.abs(v.speed) > 140) {
-      v.health -= Math.abs(v.speed) * 0.06;
-      v.speed *= -0.25;
+    // Slide along the wall: try each axis separately, so a diagonal
+    // approach to a building corner glides around it instead of wedging
+    // the car forever. The point check above rejects the whole step, so
+    // without this a car aimed at a corner just judders in place: the
+    // playthrough wedged 6x at the same corner (1345,1216) this way.
+    let slid = false;
+    if (!world.buildingAt(nx, v.y)) { v.x = nx; slid = true; }
+    else if (!world.buildingAt(v.x, ny)) { v.y = ny; slid = true; }
+    if (!slid) {
+      // Head-on: stop dead with a small bounce (and damage if fast).
+      if (Math.abs(v.speed) > 140) {
+        v.health -= Math.abs(v.speed) * 0.06;
+        v.speed *= -0.25;
+      } else {
+        v.speed *= -0.15;
+      }
     } else {
-      v.speed *= -0.15;
+      // A graze: scrub a little speed, keep rolling along the wall.
+      v.speed *= 0.98;
     }
   } else {
     v.x = nx;
@@ -103,4 +117,17 @@ export function damageVehicle(v, amount) {
     v.speed = 0;
   }
   return v.dead;
+}
+
+// Full repair: back to factory health, alive again, kept rolling at its
+// current speed. One place for it, so the garage shop, Nia's Field Repair
+// and any future fix can never drift apart (a repaired car that stayed
+// dead was the old inline bug waiting to happen).
+export function repairVehicle(v) {
+  if (!v) return false;
+  v.health = v.def.health;
+  v.dead = false;
+  v.exploded = false;
+  v.explodedShown = false;
+  return true;
 }

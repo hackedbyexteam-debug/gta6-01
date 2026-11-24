@@ -96,8 +96,10 @@ export function createWorld(rng) {
   };
   const bank = { ...nearRoad(16, 12), name: 'Solmar National Bank' };
   const pizza = { ...nearRoad(24, 24), name: 'Slice House Pizza' };
-  const hideout = { ...nearRoad(16, 36), name: 'Rico\u2019s Hideout' };
-  const spawn = { x: hideout.x + 40, y: hideout.y + 40 };
+  const hideout = { ...nearRoad(16, 36), name: 'Dario\u2019s Hideout' };
+  // Spawn exactly on the road at the hideout, so the player can walk and
+  // drive from the first second — never inside a building's footprint.
+  const spawn = { x: hideout.x, y: hideout.y };
   const beach = { ...nearRoad(32, 56), name: 'Solmar Beach' };
 
   function tileAt(tx, ty) {
@@ -157,7 +159,7 @@ export function createWorld(rng) {
     return { building: b, kind, name, doorX: door.x, doorY: door.y };
   }
   const enterables = [];
-  const e1 = markEnterable(hideout, 'hideout', 'Rico\u2019s Hideout');
+  const e1 = markEnterable(hideout, 'hideout', 'Dario\u2019s Hideout');
   if (e1) enterables.push(e1);
   const e2 = markEnterable(shops.gunsmith, 'gunsmith', 'Ironworks Gunsmith');
   if (e2) enterables.push(e2);
