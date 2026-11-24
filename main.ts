@@ -1,7 +1,8 @@
 // SOLMAR HEAT — the entry program (Node 22, standard library only). The game
 // is the game/ folder beside this file: plain static files a desktop browser
-// loads offline (game/index.html and its ES modules, no library, no network
-// request). This program copies game/ and screenshots/ to /output and writes
+// loads offline (game/index.html and its ES modules, plus the vendored
+// three.js in game/vendor/three.min.js — no library is fetched over the
+// network). This program copies game/ and screenshots/ to /output and writes
 // /output/dossier.json, the summary the judge reads, with the vendored
 // make.fun library.
 //
